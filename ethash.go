@@ -169,13 +169,6 @@ func (l *Light) Verify(block Block) bool {
 	// The actual check.
 	target := new(big.Int).Div(maxUint256, difficulty)
 
-	// DEBUG (this test "fails" when a valid share is not a new block)
-	//if !(result.Big().Cmp(target) <= 0) {
-	//	fmt.Println("actual check failed...")
-	//	fmt.Printf("result = %s\n", result.Big().String())
-	//	fmt.Printf("target = %s\n", target.String())
-	//}
-
 	return result.Big().Cmp(target) <= 0
 }
 

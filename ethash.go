@@ -40,6 +40,9 @@ import (
 	"time"
 	"unsafe"
 
+	"bytes"
+	"encoding/binary"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -153,18 +156,90 @@ func (l *Light) Verify(block Block) bool {
 	// Recompute the hash using the cache.
 	ok, mixDigest, result := cache.compute(uint64(dagSize), block.HashNoNonce(), block.Nonce())
 	if !ok {
+		log.Debug("cache.compute fail")
 		return false
 	}
 
 	// avoid mixdigest malleability as it's not included in a block's "hashNononce"
 	if block.MixDigest() != mixDigest {
+		log.Debug("mixdigest fail")
 		return false
 	}
 
 	// The actual check.
 	target := new(big.Int).Div(maxUint256, difficulty)
+
+	// DEBUG (this test "fails" when a valid share is not a new block)
+	//if !(result.Big().Cmp(target) <= 0) {
+	//	fmt.Println("actual check failed...")
+	//	fmt.Printf("result = %s\n", result.Big().String())
+	//	fmt.Printf("target = %s\n", target.String())
+	//}
+
 	return result.Big().Cmp(target) <= 0
 }
+
+/*
+    support code for open-ethereum-pool, NiceHash extensions
+	Wolfgang Frisch https://github.com/wfr
+ */
+func (l *Light) computeMixDigest(blockNum uint64, hashNoNonce common.Hash, nonce uint64) (ok bool, mixDigest common.Hash, result common.Hash) {
+	cache := l.getCache(blockNum)
+	dagSize := C.ethash_get_datasize(C.uint64_t(blockNum))
+	return cache.compute(uint64(dagSize), hashNoNonce, nonce)
+}
+
+func le256todouble(target [32]byte) float64 {
+	var bits192 float64 = 6277101735386680763835789423207666416102355444464034512896.0
+	var bits128 float64 = 340282366920938463463374607431768211456.0
+	var bits64 float64 = 18446744073709551616.0
+	var dcut64 float64
+	var data64 uint64
+
+	buf := bytes.NewReader(target[24:32])
+	binary.Read(buf, binary.LittleEndian, &data64)
+	dcut64 = float64(data64) * bits192
+
+	buf = bytes.NewReader(target[16:24])
+	binary.Read(buf, binary.LittleEndian, &data64)
+	dcut64 += float64(data64) * bits128
+	
+	buf = bytes.NewReader(target[8:16])
+	binary.Read(buf, binary.LittleEndian, &data64)
+	dcut64 += float64(data64) * bits64
+	
+	buf = bytes.NewReader(target[0:16])
+	binary.Read(buf, binary.LittleEndian, &data64)
+	dcut64 += float64(data64)
+
+	return dcut64
+}
+
+func share_diff(h [32]byte) float64 {
+	var truediffone float64 = 26959535291011309493156476344723991336010898738574164086137773096960.0
+	var s64 float64
+
+	var hash_end [32]byte
+	for i := 0; i < 32; i++ {
+		hash_end[31-i] = h[i]
+	}
+
+	s64 = le256todouble(hash_end)
+	if s64 <= 0 {
+		return 0.0
+	}
+	return truediffone / s64
+}
+
+func (l *Light) GetShareDiff(blockNum uint64, headerHash common.Hash, nonce uint64) (diff float64, mixDigest common.Hash) {
+	_, md, h := l.computeMixDigest(blockNum, headerHash, nonce)
+	var b [32]byte
+	copy(b[:], h.Bytes())
+	return share_diff(b), md
+}
+/* open-ethereum-pool additions END */
+
+
 
 func h256ToHash(in C.ethash_h256_t) common.Hash {
 	return *(*common.Hash)(unsafe.Pointer(&in.b))

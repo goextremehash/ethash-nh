@@ -26,8 +26,13 @@ int ethashGoCallback_cgo(unsigned);
 import "C"
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"io/ioutil"
 	"math/big"
 	"math/rand"
@@ -39,13 +44,6 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
-
-	"bytes"
-	"encoding/binary"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 )
 
 var (
@@ -175,7 +173,7 @@ func (l *Light) Verify(block Block) bool {
 /*
     support code for open-ethereum-pool, NiceHash extensions
 	Wolfgang Frisch https://github.com/wfr
- */
+*/
 func (l *Light) computeMixDigest(blockNum uint64, hashNoNonce common.Hash, nonce uint64) (ok bool, mixDigest common.Hash, result common.Hash) {
 	cache := l.getCache(blockNum)
 	dagSize := C.ethash_get_datasize(C.uint64_t(blockNum))
@@ -196,11 +194,11 @@ func le256todouble(target [32]byte) float64 {
 	buf = bytes.NewReader(target[16:24])
 	binary.Read(buf, binary.LittleEndian, &data64)
 	dcut64 += float64(data64) * bits128
-	
+
 	buf = bytes.NewReader(target[8:16])
 	binary.Read(buf, binary.LittleEndian, &data64)
 	dcut64 += float64(data64) * bits64
-	
+
 	buf = bytes.NewReader(target[0:16])
 	binary.Read(buf, binary.LittleEndian, &data64)
 	dcut64 += float64(data64)
@@ -230,9 +228,8 @@ func (l *Light) GetShareDiff(blockNum uint64, headerHash common.Hash, nonce uint
 	copy(b[:], h.Bytes())
 	return share_diff(b), md
 }
+
 /* open-ethereum-pool additions END */
-
-
 
 func h256ToHash(in C.ethash_h256_t) common.Hash {
 	return *(*common.Hash)(unsafe.Pointer(&in.b))
@@ -501,7 +498,9 @@ func GetSeedHash(blockNum uint64) ([]byte, error) {
 
 func makeSeedHash(epoch uint64) (sh common.Hash) {
 	for ; epoch > 0; epoch-- {
-		sh = crypto.Sha3Hash(sh[:])
+		sh = Sha3Hash(sh[:])
 	}
 	return sh
 }
+
+func Sha3Hash(data ...[]byte) common.Hash { return crypto.Keccak256Hash(data...) }
